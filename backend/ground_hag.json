@@ -1,0 +1,23 @@
+{
+  "pipeline": [
+    { "type": "readers.las", "filename": "20251212105617000.las" },
+
+    { "type": "filters.smrf",
+      "cell": 1.0,
+      "window": 36.0,
+      "threshold": 0.75,
+      "slope": 0.32,
+      "scalar": 1.35,
+      "returns": "last, only"
+    },
+
+    { "type": "filters.hag_delaunay",
+      "count": 10,
+      "allow_extrapolation": true
+    },
+
+    { "type": "writers.las", "filename": "OUT_ground_hag.las",
+      "extra_dims": "HeightAboveGround=float32"
+    }
+  ]
+}

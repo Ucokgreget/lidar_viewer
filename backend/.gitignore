@@ -1,0 +1,54 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environment lama
+.venv/
+venv/
+env/
+.venv_old/
+
+# Conda local folders kalau ada
+.conda/
+
+# VS Code
+.vscode/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Build / packaging
+build/
+dist/
+*.egg-info/
+
+# Test / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs
+*.log
+
+# Output point cloud hasil proses
+output/
+OUT_*.las
+OUT_*.laz
+*.las
+*.laz
+*.codata
+
+# Temporary point cloud / intermediate files
+tmp/
+temp/
+*.tmp
+
+# Jangan commit file besar mentah kecuali memang sample
+# Uncomment kalau semua LAS/LAZ mau di-ignore:
+# *.las
+# *.laz

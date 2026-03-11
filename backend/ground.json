@@ -1,0 +1,16 @@
+{
+  "pipeline": [
+    { "type": "readers.las", "filename": "INPUT.las" },
+
+    { "type": "filters.smrf",
+      "cell": 1.0,
+      "window": 36.0,
+      "threshold": 0.75,
+      "slope": 0.32,
+      "scalar": 1.35,
+      "returns": "last, only"
+    },
+
+    { "type": "writers.las", "filename": "OUT_ground.las" }
+  ]
+}
