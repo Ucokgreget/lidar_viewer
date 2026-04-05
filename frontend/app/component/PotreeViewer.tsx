@@ -211,7 +211,7 @@ export default function PotreeViewer({
 			if (!disposed) {
 				console.error("Failed to initialize Potree viewer:", error);
 			}
-		});
+		});2
 
 		return () => {
 			disposed = true;
