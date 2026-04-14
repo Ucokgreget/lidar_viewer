@@ -1,6 +1,6 @@
 import subprocess
 
-input_las = "20251212105617000.las"
+input_las = "20251211103205000.las"
 output_las = "OUT_ground_hag.las"
 
 cmd = [
