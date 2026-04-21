@@ -427,7 +427,15 @@ export default function PotreeViewer({
 					flexShrink: 0,
 				}}
 			>
-				<div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+				<Link
+					to="/"
+					style={{
+						display: "flex",
+						alignItems: "center",
+						gap: "10px",
+						textDecoration: "none",
+					}}
+				>
 					{/* Lidar icon */}
 					<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
 						<circle cx="12" cy="12" r="2" />
@@ -437,7 +445,7 @@ export default function PotreeViewer({
 					<span style={{ color: "#e6edf3", fontSize: "13px", fontWeight: 600, fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif", letterSpacing: "0.01em" }}>
 						Lidar Viewer
 					</span>
-				</div>
+				</Link>
 
 				<div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
 					<span style={{ color: "#30363d", fontSize: "11px", fontFamily: "monospace" }}>
