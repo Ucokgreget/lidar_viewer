@@ -1,7 +1,7 @@
 
-
+//Classification.tsx
 import { useMemo, useState } from "react";
-import { Link } from "react-router";
+import { Link, useNavigate } from "react-router";
 
 type ClassificationFormValues = {
     file: File | null;
@@ -32,6 +32,7 @@ const defaultValues: ClassificationFormValues = {
 };
 
 export default function Classification() {
+    const navigate = useNavigate();
     const [values, setValues] = useState<ClassificationFormValues>(defaultValues);
     const [isSubmitting, setIsSubmitting] = useState(false);
     const [result, setResult] = useState<string>("");
@@ -76,9 +77,16 @@ export default function Classification() {
 
             try {
                 const parsed = JSON.parse(rawText);
-                setResult(JSON.stringify(parsed, null, 2));
-            } catch {
-                setResult(rawText || "Klasifikasi berhasil.");
+                if (parsed.job_id) {
+                    navigate(`/conversion?job_id=${encodeURIComponent(parsed.job_id)}`);
+                } else {
+                    throw new Error("job_id tidak ditemukan dalam response.");
+                }
+            } catch (err) {
+                if (err instanceof SyntaxError) {
+                    throw new Error("Invalid JSON response from server: " + rawText);
+                }
+                throw err;
             }
         } catch (submitError) {
             if (submitError instanceof Error) {
@@ -100,7 +108,7 @@ export default function Classification() {
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-8 gap-4 sm:gap-0">
                     <div>
                         <h1 className="text-3xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-indigo-400 to-cyan-400">
-                            Klasifikasi Pohon
+                            Klasifikasi LiDAR
                         </h1>
                         <p className="text-slate-400 text-sm mt-1">Konfigurasi parameter klasifikasi LiDAR Anda.</p>
                     </div>
@@ -153,15 +161,15 @@ export default function Classification() {
                         </div>
                         <div>
                             <label className={labelClasses}>Threshold</label>
-                            <input type="number" step="any" value={values.threshold} onChange={(e) => setValues((prev) => ({ ...prev, threshold: Number(e.target.value) }))} className={inputClasses} />
+                            <input type="number" step="0.01" value={values.threshold} onChange={(e) => setValues((prev) => ({ ...prev, threshold: Number(e.target.value) }))} className={inputClasses} />
                         </div>
                         <div>
                             <label className={labelClasses}>Slope</label>
-                            <input type="number" step="any" value={values.slope} onChange={(e) => setValues((prev) => ({ ...prev, slope: Number(e.target.value) }))} className={inputClasses} />
+                            <input type="number" step="0.01" value={values.slope} onChange={(e) => setValues((prev) => ({ ...prev, slope: Number(e.target.value) }))} className={inputClasses} />
                         </div>
                         <div>
                             <label className={labelClasses}>Scalar</label>
-                            <input type="number" step="any" value={values.scalar} onChange={(e) => setValues((prev) => ({ ...prev, scalar: Number(e.target.value) }))} className={inputClasses} />
+                            <input type="number" step="0.01" value={values.scalar} onChange={(e) => setValues((prev) => ({ ...prev, scalar: Number(e.target.value) }))} className={inputClasses} />
                         </div>
                         <div>
                             <label className={labelClasses}>Returns</label>
@@ -180,7 +188,7 @@ export default function Classification() {
                         </div>
                         <div>
                             <label className={labelClasses}>Tree Min Height</label>
-                            <input type="number" step="any" value={values.tree_min_h} onChange={(e) => setValues((prev) => ({ ...prev, tree_min_h: Number(e.target.value) }))} className={inputClasses} />
+                            <input type="number" step="0.1" value={values.tree_min_h} onChange={(e) => setValues((prev) => ({ ...prev, tree_min_h: Number(e.target.value) }))} className={inputClasses} />
                         </div>
                         <div className="sm:col-span-2 md:col-span-3">
                             <label className={labelClasses}>Chunk Size</label>

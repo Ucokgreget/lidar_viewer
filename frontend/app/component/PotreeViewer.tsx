@@ -1,6 +1,27 @@
+//potreeViewer.tsx
 import { useEffect, useRef } from "react";
 import type { CSSProperties } from "react";
 import { Link } from "react-router";
+
+type AoiPolygon = Array<[number, number]>;
+
+type GeoJsonPointFeature = {
+	type: "Feature";
+	geometry: {
+		type: "Point";
+		coordinates: [number, number, number?];
+	};
+	properties?: {
+		id?: number;
+		height?: number;
+		[key: string]: unknown;
+	};
+};
+
+type GeoJsonFeatureCollection = {
+	type: "FeatureCollection";
+	features: GeoJsonPointFeature[];
+};
 
 type PotreeViewerProps = {
 	pointcloudUrl?: string;
@@ -8,6 +29,10 @@ type PotreeViewerProps = {
 	style?: CSSProperties;
 	pointBudget?: number;
 	showSidebar?: boolean;
+	onAoiPolygonChange?: (polygon: AoiPolygon | null) => void;
+	treeCentersGeojson?: GeoJsonFeatureCollection | null;
+	markerRadius?: number;
+	markerZOffset?: number;
 };
 
 type PotreePointCloudEvent = {
@@ -20,9 +45,33 @@ type PotreePointCloudEvent = {
 	};
 };
 
+type PotreeMeasurement = {
+	points?: Array<{
+		position?: { x: number; y: number; z: number };
+	}>;
+	remove?: () => void;
+};
+
 type PotreeViewerInstance = {
 	scene: {
 		addPointCloud: (pointcloud: unknown) => void;
+		removeMeasurement?: (measurement: PotreeMeasurement) => void;
+		measurements?: PotreeMeasurement[];
+		scene?: {
+			add: (object: unknown) => void;
+			remove: (object: unknown) => void;
+		};
+	};
+	measuringTool?: {
+		startInsertion: (options?: Record<string, unknown>) => PotreeMeasurement;
+	};
+	renderer?: {
+		setAnimationLoop?: (callback: ((time: number) => void) | null) => void;
+		dispose?: () => void;
+		forceContextLoss?: () => void;
+	};
+	stats?: {
+		dom?: HTMLElement;
 	};
 	setEDLEnabled: (enabled: boolean) => void;
 	setFOV: (fov: number) => void;
@@ -320,12 +369,202 @@ export default function PotreeViewer({
 	style,
 	pointBudget = 2_000_000,
 	showSidebar = true,
+	onAoiPolygonChange,
+	treeCentersGeojson = null,
+	markerRadius = 2.0,
+	markerZOffset = 4.0,
 }: PotreeViewerProps) {
 	const renderAreaRef = useRef<HTMLDivElement | null>(null);
 	const sidebarRef = useRef<HTMLDivElement | null>(null);
+	const viewerRef = useRef<PotreeViewerInstance | null>(null);
+	const aoiMeasurementRef = useRef<PotreeMeasurement | null>(null);
+	const treeCentersGeojsonRef = useRef<GeoJsonFeatureCollection | null>(null);
+	const markerGroupRef = useRef<unknown | null>(null);
+
+	const safeMarkerRadius = Number.isFinite(markerRadius) && markerRadius > 0 ? markerRadius : 2.0;
+	const safeMarkerZOffset = Number.isFinite(markerZOffset) ? markerZOffset : 4.0;
+
+	const clearTreeMarkers = () => {
+		const viewer = viewerRef.current;
+		const group = markerGroupRef.current as {
+			userData?: {
+				sharedGeometry?: { dispose?: () => void };
+				sharedMaterial?: { dispose?: () => void } | Array<{ dispose?: () => void }>;
+			};
+			traverse?: (cb: (child: any) => void) => void;
+		} | null;
+		const scene = viewer?.scene?.scene;
+		if (scene && group) {
+			scene.remove(group);
+		}
+
+		const sharedGeometry = group?.userData?.sharedGeometry;
+		const sharedMaterial = group?.userData?.sharedMaterial;
+		if (sharedGeometry?.dispose) {
+			sharedGeometry.dispose();
+		}
+		if (sharedMaterial) {
+			if (Array.isArray(sharedMaterial)) {
+				sharedMaterial.forEach((material) => material?.dispose?.());
+			} else {
+				sharedMaterial.dispose?.();
+			}
+		}
+
+		if (!sharedGeometry && !sharedMaterial && group?.traverse) {
+			group.traverse((child: any) => {
+				if (child?.geometry?.dispose) {
+					child.geometry.dispose();
+				}
+				if (child?.material) {
+					if (Array.isArray(child.material)) {
+						child.material.forEach((material: any) => material?.dispose?.());
+					} else {
+						child.material.dispose?.();
+					}
+				}
+			});
+		}
+
+		markerGroupRef.current = null;
+	};
+
+	const renderTreeMarkers = (geojson: GeoJsonFeatureCollection) => {
+		const viewer = viewerRef.current;
+		const scene = viewer?.scene?.scene;
+		if (!scene) {
+			return;
+		}
+
+		clearTreeMarkers();
+
+		const THREE = (window as any).THREE;
+		if (!THREE || !geojson?.features?.length) {
+			return;
+		}
+		const group = new THREE.Group();
+		group.name = "tree-center-markers";
+		group.renderOrder = 999;
+
+		const geometry = new THREE.SphereGeometry(safeMarkerRadius, 16, 16);
+		const material = new THREE.MeshBasicMaterial({
+			color: 0xffff00,
+			depthTest: false,
+		});
+		material.depthWrite = false;
+		group.userData = {
+			sharedGeometry: geometry,
+			sharedMaterial: material,
+		};
+
+		for (const feature of geojson.features) {
+			if (feature.geometry?.type !== "Point") continue;
+			const coords = feature.geometry.coordinates;
+			if (!Array.isArray(coords) || coords.length < 2) continue;
+
+			const x = Number(coords[0]);
+			const y = Number(coords[1]);
+			const z = Number(coords[2] ?? 0);
+			if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) continue;
+
+			const marker = new THREE.Mesh(geometry, material);
+			marker.position.set(x, y, z + safeMarkerZOffset);
+			marker.name = `tree-center-${feature.properties?.id ?? ""}`;
+			marker.renderOrder = 999;
+			group.add(marker);
+		}
+
+		scene.add(group);
+		markerGroupRef.current = group;
+	};
+
+	const clearAoi = () => {
+		const measurement = aoiMeasurementRef.current;
+		if (measurement) {
+			measurement.remove?.();
+			viewerRef.current?.scene.removeMeasurement?.(measurement);
+		}
+
+		aoiMeasurementRef.current = null;
+		onAoiPolygonChange?.(null);
+	};
+
+	const startAoi = () => {
+		const activeViewer = viewerRef.current;
+		if (!activeViewer?.measuringTool?.startInsertion) {
+			return;
+		}
+
+		clearAoi();
+		const measurement = activeViewer.measuringTool.startInsertion({
+			showDistances: false,
+			showArea: true,
+			closed: true,
+			name: "AOI",
+		});
+		aoiMeasurementRef.current = measurement;
+	};
+
+	const saveAoi = () => {
+		const activeViewer = viewerRef.current;
+		const measurements = activeViewer?.scene?.measurements;
+		const measurement = aoiMeasurementRef.current
+			?? (measurements && measurements.length
+				? measurements[measurements.length - 1]
+				: undefined);
+
+		console.log("AOI measurement object:", measurement);
+
+		const points = measurement?.points ?? [];
+		if (points.length < 3) {
+			onAoiPolygonChange?.(null);
+			return;
+		}
+
+		const polygon: AoiPolygon = points
+			.map((point) => point.position)
+			.filter((position): position is { x: number; y: number; z: number } => Boolean(position))
+			.map((position) => [Number(position.x), Number(position.y)]);
+
+		if (polygon.length < 3) {
+			onAoiPolygonChange?.(null);
+			return;
+		}
+
+		console.log("Extracted AOI polygon:", polygon);
+		onAoiPolygonChange?.(polygon);
+	};
+
+	const aoiButtonStyle: CSSProperties = {
+		background: "#161b22",
+		color: "#e6edf3",
+		border: "1px solid #30363d",
+		borderRadius: "6px",
+		fontSize: "11px",
+		padding: "4px 8px",
+		cursor: "pointer",
+		fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
+	};
+
+	const aoiDangerButtonStyle: CSSProperties = {
+		...aoiButtonStyle,
+		borderColor: "#8b949e",
+		color: "#8b949e",
+	};
+
+	useEffect(() => {
+		treeCentersGeojsonRef.current = treeCentersGeojson;
+		if (!treeCentersGeojson) {
+			clearTreeMarkers();
+			return;
+		}
+
+		renderTreeMarkers(treeCentersGeojson);
+	}, [treeCentersGeojson, safeMarkerRadius, safeMarkerZOffset]);
 
 	useEffect(() => {
 		let disposed = false;
+		let viewer: PotreeViewerInstance | null = null;
 
 		if (typeof window === "undefined" || typeof document === "undefined") {
 			return;
@@ -346,17 +585,19 @@ export default function PotreeViewer({
 				throw new Error("Potree global not available after script loading.");
 			}
 
-			const viewer = new Potree.Viewer(renderAreaRef.current);
-			viewer.setEDLEnabled(true);
-			viewer.setFOV(60);
-			viewer.setPointBudget(pointBudget);
-			viewer.setDescription("");
+			viewer = new Potree.Viewer(renderAreaRef.current);
+			viewerRef.current = viewer;
+			const activeViewer = viewer;
+			activeViewer.setEDLEnabled(true);
+			activeViewer.setFOV(60);
+			activeViewer.setPointBudget(pointBudget);
+			activeViewer.setDescription("");
 
 			// Initialize Potree GUI once viewer is ready.
-			viewer.loadGUI(() => {
+			activeViewer.loadGUI(() => {
 				if (disposed) return;
 
-				const anyViewer = viewer as unknown as {
+				const anyViewer = activeViewer as unknown as {
 					setLanguage?: (lang: string) => void;
 					toggleSidebar?: () => void;
 				};
@@ -378,19 +619,38 @@ export default function PotreeViewer({
 				pointcloud.material.pointSizeType = Potree.PointSizeType.ADAPTIVE;
 				pointcloud.material.activeAttributeName = "classification";
 
-				viewer.scene.addPointCloud(pointcloud);
-				viewer.fitToScreen();
+				activeViewer.scene.addPointCloud(pointcloud);
+				activeViewer.fitToScreen();
 			});
+
+			const pendingGeojson = treeCentersGeojsonRef.current;
+			if (pendingGeojson) {
+				renderTreeMarkers(pendingGeojson);
+			}
 		};
 
 		initialize().catch((error) => {
 			if (!disposed) {
 				console.error("Failed to initialize Potree viewer:", error);
 			}
-		});2
+		});
 
 		return () => {
 			disposed = true;
+			clearTreeMarkers();
+
+			if (viewer) {
+				// Stop Potree render loop and release WebGL resources on route leave.
+				viewer.renderer?.setAnimationLoop?.(null);
+				viewer.renderer?.dispose?.();
+				viewer.renderer?.forceContextLoss?.();
+				viewer.stats?.dom?.remove();
+				viewer = null;
+			}
+
+			viewerRef.current = null;
+			aoiMeasurementRef.current = null;
+			treeCentersGeojsonRef.current = null;
 
 			// Clear render/sidebar content to avoid stale DOM when remounting.
 			if (renderAreaRef.current) {
@@ -428,7 +688,7 @@ export default function PotreeViewer({
 				}}
 			>
 				<Link
-					to="/"
+					to="/potree"
 					style={{
 						display: "flex",
 						alignItems: "center",
@@ -448,11 +708,22 @@ export default function PotreeViewer({
 				</Link>
 
 				<div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+					<div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+						<button type="button" onClick={startAoi} style={aoiButtonStyle}>
+							Gambar AOI
+						</button>
+						<button type="button" onClick={saveAoi} style={aoiButtonStyle}>
+							Simpan AOI
+						</button>
+						<button type="button" onClick={clearAoi} style={aoiDangerButtonStyle}>
+							Clear AOI
+						</button>
+					</div>
 					<span style={{ color: "#30363d", fontSize: "11px", fontFamily: "monospace" }}>
 						{pointcloudUrl.split("/").pop()}
 					</span>
 					<Link
-						to="/"
+						to="/potree"
 						style={{
 							color: "#8b949e",
 							fontSize: "12px",
