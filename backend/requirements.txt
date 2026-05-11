@@ -2,7 +2,7 @@ fastapi
 uvicorn
 python-multipart
 pydantic
-laspy==2.7.0
+laspy==2.7
 numpy==2.4.2
 scipy
 scikit-image
