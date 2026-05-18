@@ -195,7 +195,7 @@ export default function PotreeListPage() {
 
                   <span style={{ opacity: 0.75, fontSize: "0.82rem" }}>
                     {entry.jobId ? "Linked Job · " : ""}
-                    {labelForType(entry.type)}
+                     {labelForType(entry.type)}
                   </span>
                 </Link>
               );

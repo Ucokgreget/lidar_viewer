@@ -73,6 +73,26 @@ type SweepResult = SweepPreset & {
 	tree_count_min_h: number;
 };
 
+type VolumeParams = {
+	resolution: number,
+	smooth_sigma: number,
+}
+
+type VolumeResult = {
+	volume_cut_m3: number,
+	volume_fill_m3 : number,
+	net_volume_m3: number,
+	stockpile_area_m2: number,
+	total_aoi_area_m2: number,
+	max_height_m: number,
+	avg_height_m: number,
+	resolution: number,
+	ground_points_used: number,
+	using_aoi: boolean
+}
+
+
+
 const DEFAULT_COUNT_PARAMS: TreeCountParams = {
 	chm_res: 0.5,
 	min_tree_distance: 6.0,
@@ -97,6 +117,11 @@ const SWEEP_PRESETS: SweepPreset[] = [
 	...COUNT_PRESETS,
 	{ label: "Aggressive", min_tree_distance: 4.0, smooth_sigma: 0.5 },
 ];
+
+const DEFAULT_VOLUME_PARAMS: VolumeParams = {
+	resolution: 0.5,
+	smooth_sigma: 0.5,
+}
 
 function getFilenameFromDisposition(disposition: string | null, fallback: string): string {
 	if (!disposition) return fallback;
@@ -160,6 +185,9 @@ export default function PotreeViewerPage({ loaderData }: Route.ComponentProps) {
 	const [errorMessage, setErrorMessage] = useState<string | null>(null);
 	const [errorDetail, setErrorDetail] = useState<string | null>(null);
 	const [statusMessage, setStatusMessage] = useState<string | null>(null);
+	const [volumeParams, setVolumeParams] = useState<VolumeParams>(DEFAULT_VOLUME_PARAMS);
+	const [volumeResult, setVolumeResult] = useState<VolumeResult | null>(null);
+	const [isCalculatingVolume, setIsCalculatingVolume] = useState(false);
 
 	const jobId = loaderData.jobId ?? null;
 	const hasAoi = Boolean(aoiPolygon && aoiPolygon.length >= 3);
@@ -398,6 +426,49 @@ export default function PotreeViewerPage({ loaderData }: Route.ComponentProps) {
 		}
 	};
 
+	const handleCalculateVolume = async () => {
+		setErrorMessage(null);
+		setErrorDetail(null);
+		setStatusMessage(null);
+		setVolumeResult(null);
+
+		if (!jobId) {
+			setErrorMessage("job_id tidak ditemukan di URL.");
+			return;
+		}
+
+		const formData = new FormData();
+		formData.append("resolution", String(volumeParams.resolution));
+		formData.append("smooth_sigma", String(volumeParams.smooth_sigma));
+
+		if (aoiPolygon && aoiPolygon.length >= 3) {
+			formData.append("aoi_polygon", JSON.stringify(aoiPolygon));
+		}
+
+		setIsCalculatingVolume(true);
+		try {
+			const response = await fetch(
+				`http://localhost:8000/volume/${encodeURIComponent(jobId)}`,
+				{ method: "POST", body: formData },
+			);
+
+			if (!response.ok) {
+				const { message, detail } = await readErrorPayload(response);
+				setErrorMessage(message);
+				setErrorDetail(detail && detail !== message ? detail : null);
+				return;
+			}
+
+			const payload = (await response.json()) as VolumeResult;
+			setVolumeResult(payload);
+			setStatusMessage("Volume berhasil dihitung.");
+		} catch (error) {
+			setErrorMessage(error instanceof Error ? error.message : "Gagal menghitung volume.");
+		} finally {
+			setIsCalculatingVolume(false);
+		}
+	};
+
 	const isButtonDisabled = !jobId || isCounting || isSweepRunning;
 	const isSweepDisabled = !jobId || isCounting || isSweepRunning;
 	const isDownloadDisabled = !jobId || isDownloading;
@@ -443,6 +514,8 @@ export default function PotreeViewerPage({ loaderData }: Route.ComponentProps) {
 					borderRadius: "12px",
 					padding: "12px",
 					minWidth: "280px",
+					maxHeight: "calc(100vh - 80px)",
+					overflowY: "auto",
 					color: "#e6edf3",
 					fontFamily: "-apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif",
 					boxShadow: "0 8px 20px rgba(0, 0, 0, 0.35)",
@@ -712,6 +785,151 @@ export default function PotreeViewerPage({ loaderData }: Route.ComponentProps) {
 						Clear Markers
 					</button>
 				</div>
+				{/* ── Divider ── */}
+				<div
+					style={{
+						borderTop: "1px solid #21262d",
+						margin: "12px 0",
+					}}
+				/>
+
+				{/* ── Header ── */}
+				<div
+					style={{
+						fontSize: "11px",
+						letterSpacing: "0.12em",
+						textTransform: "uppercase",
+						color: "#3fb950",
+						marginBottom: "10px",
+						fontWeight: 700,
+					}}
+				>
+					Stockpile Volume
+				</div>
+
+				{/* ── Params ── */}
+				<div style={{ display: "grid", gap: "8px", marginBottom: "10px" }}>
+					<div>
+						<div style={{ fontSize: "11px", color: "#8b949e", marginBottom: "4px" }}>
+							resolution (m)
+						</div>
+						<input
+							type="number"
+							step="0.1"
+							value={volumeParams.resolution}
+							onChange={(e) =>
+								setVolumeParams((prev) => ({ ...prev, resolution: Number(e.target.value) }))
+							}
+							style={{
+								width: "100%",
+								background: "#0d1117",
+								border: "1px solid #30363d",
+								borderRadius: "6px",
+								color: "#e6edf3",
+								padding: "4px 6px",
+								fontSize: "12px",
+								fontFamily: "monospace",
+							}}
+						/>
+					</div>
+					<div>
+						<div style={{ fontSize: "11px", color: "#8b949e", marginBottom: "4px" }}>
+							smooth_sigma
+						</div>
+						<input
+							type="number"
+							step="0.1"
+							value={volumeParams.smooth_sigma}
+							onChange={(e) =>
+								setVolumeParams((prev) => ({ ...prev, smooth_sigma: Number(e.target.value) }))
+							}
+							style={{
+								width: "100%",
+								background: "#0d1117",
+								border: "1px solid #30363d",
+								borderRadius: "6px",
+								color: "#e6edf3",
+								padding: "4px 6px",
+								fontSize: "12px",
+								fontFamily: "monospace",
+							}}
+						/>
+					</div>
+				</div>
+
+				{/* ── Tombol hitung ── */}
+				<button
+					type="button"
+					onClick={handleCalculateVolume}
+					disabled={!jobId || isCalculatingVolume}
+					style={{
+						width: "100%",
+						padding: "8px 12px",
+						borderRadius: "8px",
+						border: "1px solid #30363d",
+						background: !jobId || isCalculatingVolume ? "#161b22" : "#1a4731",
+						color: !jobId || isCalculatingVolume ? "#8b949e" : "#3fb950",
+						fontWeight: 600,
+						cursor: !jobId || isCalculatingVolume ? "not-allowed" : "pointer",
+						transition: "background 0.2s ease",
+					}}
+				>
+					{isCalculatingVolume ? "Menghitung..." : "Hitung Volume"}
+				</button>
+
+				{/* ── Hasil ── */}
+				{volumeResult && (
+					<div
+						style={{
+							marginTop: "10px",
+							border: "1px solid #21262d",
+							borderRadius: "8px",
+							padding: "10px",
+							background: "#0b0f14",
+							fontSize: "12px",
+						}}
+					>
+						{/* Metrik utama */}
+						<div
+							style={{
+								display: "grid",
+								gridTemplateColumns: "1fr 1fr",
+								gap: "6px",
+								marginBottom: "8px",
+							}}
+						>
+							{[
+								{ label: "Cut (m³)",      value: volumeResult.volume_cut_m3.toFixed(2)    },
+								{ label: "Fill (m³)",     value: volumeResult.volume_fill_m3.toFixed(2)   },
+								{ label: "Net (m³)",      value: volumeResult.net_volume_m3.toFixed(2)    },
+								{ label: "Area (m²)",     value: volumeResult.stockpile_area_m2.toFixed(2)},
+								{ label: "Max H (m)",     value: volumeResult.max_height_m.toFixed(2)     },
+								{ label: "Avg H (m)",     value: volumeResult.avg_height_m.toFixed(2)     },
+							].map(({ label, value }) => (
+								<div
+									key={label}
+									style={{
+										background: "#161b22",
+										borderRadius: "6px",
+										padding: "6px 8px",
+									}}
+								>
+									<div style={{ fontSize: "10px", color: "#8b949e" }}>{label}</div>
+									<div style={{ color: "#3fb950", fontWeight: 700, fontFamily: "monospace" }}>
+										{value}
+									</div>
+								</div>
+							))}
+						</div>
+
+						{/* Info tambahan */}
+						<div style={{ color: "#8b949e", fontSize: "10px", lineHeight: 1.6 }}>
+							<div>Ground pts: {volumeResult.ground_points_used.toLocaleString()}</div>
+							<div>Res: {volumeResult.resolution} m | AOI: {volumeResult.using_aoi ? "ya" : "tidak"}</div>
+						</div>
+					</div>
+				)}
+
 				<button
 					type="button"
 					onClick={handleDownloadZip}

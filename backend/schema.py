@@ -106,3 +106,50 @@ class TreeCountParams(BaseModel):
             aoi_polygon=aoi_polygon,
             debug_info=debug_info,
         )
+
+class VolumeParams(BaseModel):
+    resolution: float = Field(
+        default=0.5,
+        gt=0,
+        description="Resolusi grid DTM/DSM dalam meter"
+    )
+    smooth_sigma: float = Field(
+        default=0.5,
+        gt=0,
+        description="Gaussian smoothing sigma untuk DSM (0 = tanpa smoothing)"
+    )
+    chunk_size: int = Field(
+        default=2_000_000,
+        ge=1,
+        description="ukuran chunk untuk baca file LAS"
+    )
+    aoi_polygon: Optional[str] = Field(
+        default=None,
+        description="AOI polygon JSON: [[x1,y1], [x2,y2],.....]"
+    )
+    ground_buffer_ratio: float = Field(
+        default=0.15,
+        ge=0,
+        description=(
+            "Rasio perluasan batas AOI untuk mengambil ground points "
+            "(0.15 = 15%% dari span AOI di setiap sisi)"
+        ),
+    )
+
+    @classmethod
+    def as_form(
+        cls,
+        resolution: float = Form(0.5),
+        smooth_sigma: float = Form(0.5),
+        chunk_size: int = Form(2_000_000),
+        aoi_polygon: Optional[str] = Form(None),
+        ground_buffer_ratio: float = Form(0.15)
+    ) -> "VolumeParams":
+        return cls(
+            resolution=resolution,
+            smooth_sigma=smooth_sigma,
+            chunk_size=chunk_size,
+            aoi_polygon=aoi_polygon,
+            ground_buffer_ratio=ground_buffer_ratio
+        )
+

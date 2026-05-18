@@ -11,7 +11,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
 from starlette.background import BackgroundTask
 
-from schema import ClassificationParams, TreeCountParams
+from schema import ClassificationParams, TreeCountParams, VolumeParams
 from services.pdal_service import (
     save_upload_file,
     build_pipeline,
@@ -21,6 +21,7 @@ from services.pdal_service import (
 from services.tree_service import classify_tree
 from services.count_tree_service import count_tree_centers
 from services.potree_converter_service import run_potree_converter, POINTCLOUDS_DIR
+from services.volume_service import compute_stockpile_volume
 import urllib.parse
 
 app= FastAPI(title="LiDAR Classification API") 
@@ -327,3 +328,36 @@ async def count_trees_geojson(
     except Exception:
         cleanup_path(job_dir)
         raise
+
+
+@app.post("/volume/{job_id}")
+async def calculate_volume(
+    job_id: str,
+    params: VolumeParams = Depends(VolumeParams.as_form)
+):
+    """
+    Hitung volume stockpile dengan metode Cut & Fill.
+
+    - DSM  : max Z seluruh point dalam AOI
+    - DTM  : interpolasi dari ground points (class 2) di sekitar AOI
+    - Volume cut  = Σ max(DSM - DTM, 0) × cell_area   [m³]
+    - Volume fill = Σ max(DTM - DSM, 0) × cell_area   [m³]
+    """
+    classifed_path = find_classified_las_by_job_id(job_id)
+
+    result = compute_stockpile_volume(
+        input_las=classifed_path,
+        resolution=params.resolution,
+        smooth_sigma=params.smooth_sigma,
+        chunk_size=params.chunk_size,
+        aoi_polygon=params.aoi_polygon,
+        ground_buffer_ratio=params.ground_buffer_ratio
+    )
+
+    return JSONResponse(
+        {
+            "job_id": job_id,
+            "classified_path": classifed_path.name,
+            **result,
+        }
+    )
