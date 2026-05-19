@@ -79,6 +79,8 @@ type PotreeViewerInstance = {
 	setDescription: (description: string) => void;
 	loadGUI: (callback?: () => void) => void;
 	fitToScreen: () => void;
+	earthControls: unknown;
+	setControls: (controls: unknown) => void;
 };
 
 type PotreeGlobal = {
@@ -592,6 +594,9 @@ export default function PotreeViewer({
 			activeViewer.setFOV(60);
 			activeViewer.setPointBudget(pointBudget);
 			activeViewer.setDescription("");
+
+			// Set default navigation to Earth Controls
+			activeViewer.setControls(activeViewer.earthControls);
 
 			// Initialize Potree GUI once viewer is ready.
 			activeViewer.loadGUI(() => {
