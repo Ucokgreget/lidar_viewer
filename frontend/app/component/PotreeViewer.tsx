@@ -1,6 +1,6 @@
 //potreeViewer.tsx
 import { useEffect, useRef } from "react";
-import type { CSSProperties } from "react";
+import type { CSSProperties, RefObject } from "react";
 import { Link } from "react-router";
 
 type AoiPolygon = Array<[number, number]>;
@@ -33,6 +33,7 @@ type PotreeViewerProps = {
 	treeCentersGeojson?: GeoJsonFeatureCollection | null;
 	markerRadius?: number;
 	markerZOffset?: number;
+	sidebarPortalRef?: RefObject<HTMLDivElement | null>;
 };
 
 type PotreePointCloudEvent = {
@@ -271,6 +272,22 @@ const POTREE_THEME_CSS = `
 		scrollbar-color: #30363d #0d1117 !important;
 	}
 
+	/* Fix sidebar layout so analysis panels appear right after accordion */
+	#sidebar_root {
+		display: flex !important;
+		flex-direction: column !important;
+		height: 100% !important;
+		overflow-y: auto !important;
+	}
+
+	#sidebar_root > .accordion {
+		flex-shrink: 0 !important;
+	}
+
+	#potree-analysis-portal {
+		flex-shrink: 0 !important;
+	}
+
 	::-webkit-scrollbar {
 		width: 4px !important;
 		background-color: #0d1117 !important;
@@ -375,6 +392,7 @@ export default function PotreeViewer({
 	treeCentersGeojson = null,
 	markerRadius = 2.0,
 	markerZOffset = 4.0,
+	sidebarPortalRef,
 }: PotreeViewerProps) {
 	const renderAreaRef = useRef<HTMLDivElement | null>(null);
 	const sidebarRef = useRef<HTMLDivElement | null>(null);
@@ -612,14 +630,35 @@ export default function PotreeViewer({
 				if (!showSidebar) {
 					anyViewer.toggleSidebar?.();
 				}
+
+				// Inject portal container into Potree sidebar for custom panels
+				if (sidebarPortalRef) {
+					const sidebarRoot = document.getElementById("sidebar_root");
+					if (sidebarRoot) {
+						const portalContainer = document.createElement("div");
+						portalContainer.id = "potree-analysis-portal";
+						// Insert before the accordion div so it appears right after FILTERS
+						const accordion = sidebarRoot.querySelector(".accordion");
+						if (accordion) {
+							sidebarRoot.insertBefore(portalContainer, accordion.nextSibling);
+						} else {
+							sidebarRoot.appendChild(portalContainer);
+						}
+						(sidebarPortalRef as React.MutableRefObject<HTMLDivElement | null>).current = portalContainer;
+					}
+				}
 			});
 
 			Potree.loadPointCloud(pointcloudUrl, "PointCloud", (event) => {
 				if (disposed) return;
 
 				const pointcloud = event.pointcloud;
-				if (!pointcloud || !pointcloud.material) return;
+				if (!pointcloud || !pointcloud.material) {
+					console.error("Failed to load pointcloud: pointcloud or material is null");
+					return;
+				}
 
+				console.log("Pointcloud loaded successfully:", pointcloud);
 				pointcloud.material.size = 1;
 				pointcloud.material.pointSizeType = Potree.PointSizeType.ADAPTIVE;
 				pointcloud.material.activeAttributeName = "classification";
@@ -637,6 +676,18 @@ export default function PotreeViewer({
 		initialize().catch((error) => {
 			if (!disposed) {
 				console.error("Failed to initialize Potree viewer:", error);
+				// Show error in UI
+				if (renderAreaRef.current) {
+					renderAreaRef.current.innerHTML = `
+						<div style="display: flex; align-items: center; justify-content: center; height: 100%; background: #0d1117; color: #ff7b72; font-family: monospace; padding: 20px; text-align: center;">
+							<div>
+								<h3 style="color: #ff7b72; margin-bottom: 10px;">Failed to load Potree viewer</h3>
+								<p style="color: #8b949e; font-size: 12px;">${error.message || error}</p>
+								<p style="color: #8b949e; font-size: 11px; margin-top: 10px;">Check browser console for details</p>
+							</div>
+						</div>
+					`;
+				}
 			}
 		});
 
@@ -645,10 +696,19 @@ export default function PotreeViewer({
 			clearTreeMarkers();
 
 			if (viewer) {
-				// Stop Potree render loop and release WebGL resources on route leave.
+				// Stop render loop first
 				viewer.renderer?.setAnimationLoop?.(null);
-				viewer.renderer?.dispose?.();
-				viewer.renderer?.forceContextLoss?.();
+
+				// Force context loss to free GPU resources immediately
+				try {
+					viewer.renderer?.forceContextLoss?.();
+				} catch (_) { /* ignore */ }
+
+				// Dispose renderer
+				try {
+					viewer.renderer?.dispose?.();
+				} catch (_) { /* ignore */ }
+
 				viewer.stats?.dom?.remove();
 				viewer = null;
 			}
@@ -664,6 +724,10 @@ export default function PotreeViewer({
 			if (sidebarRef.current) {
 				sidebarRef.current.innerHTML = "";
 			}
+
+			// Clean up portal container
+			const portal = document.getElementById("potree-analysis-portal");
+			portal?.remove();
 		};
 	}, [pointcloudUrl, pointBudget, showSidebar]);
 
