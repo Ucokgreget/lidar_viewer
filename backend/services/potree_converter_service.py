@@ -6,9 +6,11 @@ from pathlib import Path
 
 from fastapi import HTTPException
 
-DEFAULT_POTREE_CONVERTER = (
-    "/home/luqman/Documents/potree/potree/frontend-lidar/backend/"
-    "PotreeConverter_2.1.1_x64_linux/PotreeConverter_linux_x64/PotreeConverter"
+DEFAULT_POTREE_CONVERTER = str(
+    Path(__file__).resolve().parent.parent
+    / "PotreeConverter_2.1.1_x64_linux"
+    / "PotreeConverter_linux_x64"
+    / "PotreeConverter"
 )
 
 POTREE_CONVERTER_COMMAND = os.getenv(
